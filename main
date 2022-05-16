@@ -1,0 +1,153 @@
+INTR EQU P3.7
+				TEMP_DATA EQU P2
+				WRITE EQU P1.2
+				READ EQU P1.1
+					
+				LCD_DATA EQU P0
+				RS EQU P3.4
+				E EQU P3.2
+				RW EQU P3.3
+				CS EQU P1.0
+				
+ORG 000H 
+				MOV R2, #0AH //COUNTER 10 
+				SETB INTR //INTR
+				MOV	TEMP_DATA, #0FFH //SET P2 AS INPUT				
+				
+				;CONFIGURE LCS
+				LCALL WAIT // initialization of LCD by software
+				LCALL WAIT // this part of program is not mandatory but
+				MOV A, #38H // recommended to use because it will
+				LCALL COMMAND // guarantee proper initialization even when
+				LCALL WAIT // power supply reset timings are not met
+				MOV A, #38H
+				LCALL COMMAND
+				LCALL WAIT
+				MOV A, #38H
+				LCALL COMMAND // initialization complete
+				MOV A, #38H // initialize LCD, 8-bit interface, 5X7 dots/character
+				LCALL COMMAND // send command to LCD
+				MOV A, #0FH // display on, cursor on with blinking
+				LCALL COMMAND // send command to LCD
+				MOV A, #06 // shift cursor right
+				LCALL COMMAND // send command to LCD
+				MOV A, #01H // clear LCD screen and memory
+				LCALL COMMAND // send command to LCD
+				MOV A, #80H // set cursor at line 1, first position
+				// MOV A, #0C2H // Para la segunda fila
+				LCALL COMMAND // send command to LCD
+				
+				//Serail config
+				
+				MOV TMOD, #21H
+				MOV TH1, #0FDH
+				MOV SCON, #50H
+				SETB TR1						
+				
+				
+				CLR P1.0 //MAKE CS LOW 
+				
+				
+NEXT:				      CLR WRITE //MAKE WR LOW
+				          SETB WRITE //MAKE WR HIG TO START ADC 
+WAIT_CONVERT:			JB INTR, WAIT_CONVERT 
+                  CLR READ //MAKE READ LOW
+                  MOV A, TEMP_DATA // ej. 16
+                  LCALL SEND
+                  SETB READ//MAKE READ HIGH 
+			
+				MOV B, #2
+				MUL AB // Temp * 2
+				//Resultado quedó en A
+				
+				//CONVERT BINARY TO BCD 
+				MOV B, #100
+				DIV AB
+				MOV R1, A
+				MOV A, B
+				MOV B, #10
+				DIV AB
+				MOV R2, A
+				MOV R3, B
+				
+				LCALL INITIAL_CHAR
+				
+				//CONVERT ASCCI
+				MOV A, #30H
+				ADD A, R1				
+				LCALL DISPLAY
+				
+				MOV A, #30H
+				ADD A, R2				
+				LCALL DISPLAY 
+				
+				MOV A, #30H
+				ADD A, R3				
+				LCALL DISPLAY
+				
+				MOV A, #' '
+				LCALL DISPLAY
+				
+				MOV A, #'C'
+				LCALL DISPLAY
+
+
+DELAY:			MOV R4, #20 //WAIT FOR 1 SEC 
+REPEAT:			MOV TH0, #0x4C
+				    MOV TL0, #0x00
+				    SETB TR0
+WAIT_T:			JNB TF0, WAIT_T
+				     CLR TR0
+				    CLR TF0	
+				    DJNZ R4, REPEAT
+				
+				    LJMP NEXT
+
+
+
+COMMAND: // command write subroutine
+				MOV P0, A // place command on P1
+				CLR RS // RS = 0 for command
+				CLR RW// R/W = 0 for write operation
+				SETB E // E = 1 for high pulse
+				LCALL WAIT // wait for some time
+				CLR E // E = 0 for H-to-L pulse
+				LCALL WAIT // wait for LCD to complete the given command
+				RET
+DISPLAY: // data write subroutine
+	
+				MOV P0, A // send data to port 1
+				//MOV @R0, A
+				//INC R0
+				SETB RS // RS = 1 for data
+				CLR  RW// R/W = 0 for write operation
+				SETB E // E = 1 for high pulse
+				LCALL WAIT // wait for some time
+				CLR E // E = 0 for H-to-L pulse
+				LCALL WAIT // wait for LCD to write the given data
+				RET
+				
+				
+				
+
+SEND: 		MOV SBUF, A //SEND DATA
+HERE2: 		JNB TI, HERE2 // WAIT UNITL THE LAST BIT IS SENT
+			    CLR TI
+RETURN:		RET
+
+INITIAL_CHAR:
+			
+			MOV A, #01H //clear LCD screen
+			LCALL COMMAND
+			MOV A, #80H //set cursor at line 1 in LCD screen
+			LCALL COMMAND
+			MOV R0, #40H
+			RET
+			
+			
+WAIT: 		MOV R6, #30H // delay subroutine
+THERE:  	MOV R5, #0FFH 
+HERE1:  	DJNZ R5, HERE1 
+			    DJNZ R6, THERE
+			    RET		
+END
